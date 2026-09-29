@@ -50,9 +50,13 @@ final class BrowserEngine: NSObject {
 
     private func refreshAuthState() async {
         let cookies = await webView.configuration.websiteDataStore.httpCookieStore.allCookies()
-        isLoggedIn = cookies.contains {
+        let loggedIn = cookies.contains {
             $0.name == "sessionid" && $0.domain.hasSuffix("instagram.com") && !$0.value.isEmpty
         }
+        #if DEBUG
+        if loggedIn != isLoggedIn { print("[FocusBrowser] isLoggedIn: \(isLoggedIn) -> \(loggedIn)") }
+        #endif
+        isLoggedIn = loggedIn
     }
 
     /// Applies navigation hygiene; returns whether the navigation may proceed in the web view.
@@ -109,6 +113,9 @@ extension BrowserEngine: WKUIDelegate {
 extension BrowserEngine: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.name == RouteMessage.handlerName, let path = RouteMessage.path(from: message.body) else { return }
+        #if DEBUG
+        print("[FocusBrowser] route: \(path) (isLoggedIn: \(isLoggedIn))")
+        #endif
         currentPath = path
     }
 }
