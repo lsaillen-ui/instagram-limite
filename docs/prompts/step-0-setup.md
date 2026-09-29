@@ -1,0 +1,199 @@
+# Step 0 — Project setup (Xcode project + CLAUDE.md)
+
+You are setting up a new native iOS project in this repository (it only contains this prompt file, at `docs/prompts/step-0-setup.md`).
+
+**Scope of this step: ONLY the Xcode project skeleton and `CLAUDE.md`.** Do not write any WebView, JavaScript, routing, remote-config or SwiftData code: that belongs to Step 1 and later. If something below is ambiguous or blocked, stop and ask me instead of improvising.
+
+## Parameters
+
+| Parameter | Value |
+|---|---|
+| Project / app target / scheme | `FocusBrowser` |
+| Unit test target | `FocusBrowserTests` |
+| Bundle ID | `ch.louissaillen.focusbrowser` (tests: `ch.louissaillen.focusbrowser.tests`) |
+| Display name | `Focus` (never "Instagram": App Store guideline 5.2.1) |
+| Deployment target | iOS 17.0 |
+| Devices / orientation | iPhone only, portrait only |
+| Swift | Swift 6 language mode, strict concurrency `complete` |
+| Version | `MARKETING_VERSION` 0.1.0, `CURRENT_PROJECT_VERSION` 1 |
+| Signing | Automatic, `DEVELOPMENT_TEAM` left empty (I will set it in Xcode) |
+| Dependencies | None. No Swift packages. |
+
+## Tasks
+
+1. **Prerequisites.** Run `xcodebuild -version` and `xcodegen --version`. If XcodeGen is missing, install it with `brew install xcodegen`. If Homebrew is missing, stop and tell me.
+
+2. **Git.** `git init -b main` (unless already a repo). Add a `.gitignore` for Xcode/Swift: `xcuserdata/`, `*.xcuserstate`, `DerivedData/`, `build/`, `.build/`, `.swiftpm/`, `.DS_Store`. The generated `FocusBrowser.xcodeproj` **is committed** (so the project opens without running XcodeGen), but it is never edited by hand.
+
+3. **`project.yml`** (XcodeGen) at the repo root:
+   - `FocusBrowser`: iOS application, sources `FocusBrowser/`.
+   - `FocusBrowserTests`: `bundle.unit-test`, sources `FocusBrowserTests/`, depends on and hosted by `FocusBrowser`.
+   - One scheme `FocusBrowser` that builds the app and runs `FocusBrowserTests`.
+   - Build settings from the Parameters table (`IPHONEOS_DEPLOYMENT_TARGET`, `TARGETED_DEVICE_FAMILY: 1`, `SWIFT_VERSION: 6.0`, `SWIFT_STRICT_CONCURRENCY: complete`, versions, signing).
+   - Info.plist generated through XcodeGen's `info:` block (path `FocusBrowser/Info.plist`) with: `CFBundleDisplayName` = `Focus`, `UILaunchScreen` = empty dict, `UISupportedInterfaceOrientations` = portrait only, `ITSAppUsesNonExemptEncryption` = `false` (avoids the export-compliance question on every TestFlight upload; the CryptoKit signature check planned for Step 3 is exempt).
+   - If the installed XcodeGen supports synchronized folders (`type: syncedFolder`), use it for both source directories so new files are picked up without regenerating. If not, use standard sources and write in `CLAUDE.md` (Commands section) that `xcodegen generate` must be re-run after adding or removing files.
+   - System frameworks (WebKit, SafariServices, SwiftData, CryptoKit) are auto-linked: add nothing.
+
+4. **Minimal sources.** Nothing more than this:
+   - `FocusBrowser/App/FocusBrowserApp.swift`: `@main` SwiftUI `App` with a `WindowGroup` showing a placeholder `Text("Focus — Step 0")`.
+   - `FocusBrowser/Resources/Assets.xcassets` with an empty `AppIcon` (single 1024 pt size) and `AccentColor`.
+   - `FocusBrowserTests/SmokeTests.swift`: one Swift Testing test (`import Testing`, `@testable import FocusBrowser`, `@Test func appModuleLoads()`).
+   - Do **not** create empty folders for future steps; the planned structure is documented in `CLAUDE.md`.
+
+5. **Docs.** Keep this prompt at `docs/prompts/step-0-setup.md`. Create `docs/DEVICE_CHECKLIST.md` with a `# Device checklist` heading and the line `Items that need a real iPhone or a logged-in Instagram account to verify. Filled in from Step 1.`
+
+6. **`CLAUDE.md`** at the repo root, with **exactly** the content between the `~~~~` markers below. The only allowed edit is the "Commands" section if you had to deviate in task 3 (e.g. no synced folders); report any such edit.
+
+7. **Verify.**
+   - `xcodegen generate` runs clean.
+   - Pick an available iPhone simulator from `xcrun simctl list devices available`.
+   - `xcodebuild -project FocusBrowser.xcodeproj -scheme FocusBrowser -destination 'platform=iOS Simulator,name=<that iPhone>' build` then the same with `test`. Both must succeed, with no warnings coming from our files.
+
+8. **Commit** on `main`: `step-0: project setup (XcodeGen, targets, CLAUDE.md)`.
+
+9. **Report back**: Xcode and XcodeGen versions, simulator used, build and test results, the list of files created, and any deviation from this prompt with the reason. End by reminding me to select my Development Team in Xcode (target → Signing & Capabilities) before any run on a real device.
+
+## CLAUDE.md content
+
+~~~~markdown
+# CLAUDE.md — FocusBrowser
+
+## What this is
+Native iOS app (SwiftUI) for digital wellbeing: a focus browser that wraps the mobile web version of Instagram in a `WKWebView` and removes the infinite surfaces (home feed, Reels feed, Explore, search) while keeping DMs and the content people send in DMs. Free alternative to Konvo. Distribution: TestFlight first, App Store later.
+
+The owner (Louis) does UI/UX. Claude Code does the technical side and the logic. Code, identifiers and comments are in English.
+
+## Hard constraints (never violate)
+1. **No Meta private API**, no scraping, no automated actions on the account. The user logs in through instagram.com's own UI. The app only hides UI and blocks navigation.
+2. **No third-party backend or SDK** (no Firebase, Supabase, analytics, crash reporting). Everything stays on device. The only request the app makes on its own is fetching the public filter config.
+3. **No remote code.** The JS/CSS engine is bundled in the app. The remote `config.json` contains data only (selectors, route regexes, locale strings). Never `eval()` config strings, never download scripts (App Review 2.5.2 + security).
+4. **No Meta branding**: "Instagram" never appears in the app name, display name, icon, bundle ID or TestFlight/App Store metadata (guideline 5.2.1). Codename: FocusBrowser.
+5. **Zero Swift package dependencies** unless the owner approves one.
+6. **Never `remove()` a DOM node owned by React.** Hide with CSS (`display: none !important`) or neutralize it. Removing nodes desyncs React (blank pages, `removeChild` crashes).
+7. **Privacy**: never log or persist Instagram content, messages or cookies. Metrics (Step 4) are counts and durations only.
+
+## Tech baseline
+- Xcode project generated by **XcodeGen** from `project.yml`. Never edit `.pbxproj` by hand: edit `project.yml`, then run `xcodegen generate`. The generated `.xcodeproj` is committed.
+- iOS 17.0 minimum (raising it requires the owner's OK), iPhone only, portrait only.
+- Swift 6 language mode, strict concurrency. Types touching UI or WebKit are `@MainActor`. Use `@Observable`, not `ObservableObject`.
+- SwiftData only for user preferences and usage metrics (Step 4). The remote-config cache is a plain JSON file in Application Support, not SwiftData.
+- Unit tests use Swift Testing (`import Testing`). Pure logic (route policy, config decoding and validation) must be testable without WebKit.
+
+## Commands
+```sh
+xcodegen generate                       # after any project.yml change
+xcrun simctl list devices available     # pick an iPhone simulator
+xcodebuild -project FocusBrowser.xcodeproj -scheme FocusBrowser \
+  -destination 'platform=iOS Simulator,name=<iPhone>' build
+xcodebuild -project FocusBrowser.xcodeproj -scheme FocusBrowser \
+  -destination 'platform=iOS Simulator,name=<iPhone>' test
+```
+Debugging the web layer: Safari on the Mac → Develop menu → Simulator/iPhone → the app's page (requires `isInspectable = true`, DEBUG only).
+
+## Planned structure
+```
+FocusBrowser/
+  App/           App entry, root view, scenePhase handling
+  Browser/       BrowserEngine (@Observable, owns the single WKWebView), WebViewContainer (UIViewRepresentable), delegates
+  Routing/       RoutePolicy (pure Swift) + navigation state machine
+  Injection/     Swift side of the user scripts; bundled JS/CSS live in Resources/Injection/
+  RemoteConfig/  FilterConfig (Codable), ConfigStore (bundle → cache → remote), signature verification
+  Storage/       SwiftData models (Step 4)
+  Resources/     Assets, config.default.json, Injection/*.js|*.css
+FocusBrowserTests/
+remote-config/   config.json + config.json.sig, published with GitHub Pages (Step 3)
+docs/prompts/    the prompt used for each step
+docs/DEVICE_CHECKLIST.md
+```
+
+## Architecture decisions
+
+### Web view (Step 1)
+- **One `WKWebView` for the whole app lifetime**, created and owned by `BrowserEngine`, which is instantiated in the `App` at launch (the WebContent process start is paid during launch). The `UIViewRepresentable` only returns that existing instance; `updateUIView` stays (nearly) empty. SwiftUI must never create or recreate the web view.
+- Configuration:
+  - `websiteDataStore = .default()`: persistent cookies, so the login survives relaunches.
+  - `applicationNameForUserAgent = "Version/<iOS major>.0 Mobile/15E148 Safari/604.1"`, with the iOS major version computed at runtime. Append to the UA, don't replace it. Without the `Safari/` token Instagram may serve a degraded site or "open the app" banners.
+  - `allowsInlineMediaPlayback = true`; `mediaTypesRequiringUserActionForPlayback = .all` (no autoplay).
+  - `isInspectable = true` in DEBUG only.
+  - `scrollView.bounces = false`, `scrollView.contentInsetAdjustmentBehavior = .never`.
+- Base user script at `documentStart`: force the viewport meta to `width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover`; base CSS `html, body { overscroll-behavior: none; } body { touch-action: manipulation; } input, textarea { font-size: 16px !important; }`.
+- Start URL: `https://www.instagram.com/direct/inbox/`.
+- Navigation hygiene:
+  - Cancel `instagram://`, `itms-apps://` and `apps.apple.com` navigations.
+  - `l.instagram.com/?u=…`: extract `u`, open it in `SFSafariViewController`. Any other non-Instagram host: `SFSafariViewController`.
+  - `target=_blank` (`WKUIDelegate.createWebViewWith`): same handling, return `nil`.
+- `webViewWebContentProcessDidTerminate`: reload the last allowed URL.
+- Auth state is read natively from `WKHTTPCookieStore` (cookie `sessionid` on `.instagram.com`, HttpOnly, invisible to JS). When logged out, the login flow (`/`, `/accounts/*`, `/challenge/*`) is never redirected.
+
+### Route guard (skeleton in Step 1, refined in Step 2)
+Instagram is a single-page app: `decidePolicyFor navigationAction` does **not** fire on client-side route changes. A tiny hook in the `.page` content world wraps `history.pushState` / `history.replaceState`, listens to `popstate`, and posts `location.pathname` to the `route` message handler (it also posts once at `documentEnd`). The native `RoutePolicy` (pure Swift, unit-tested) returns `allow`, `redirect(path)` or `goBack`, and the engine applies it. Full-page navigations in `decidePolicyFor` go through the same `RoutePolicy`.
+
+Policy (owner decisions, 2026-09-29):
+
+| Surface | Path (to verify on the real site) | Policy |
+|---|---|---|
+| DMs | `/direct/…` | allow (hub) |
+| Profiles | `/{username}/` and its tabs | allow (hub) |
+| Posts | `/p/{id}/` | allow (hub) |
+| Single reel | `/reel/{id}/` (and `/reels/{id}/`) | allow only when arriving from a hub; reel → another reel = `goBack`; cold arrival = redirect to inbox |
+| Stories | `/stories/{user}/…` | allow when arriving from a hub; auto-advance to another user's stories = `goBack` |
+| Home feed | `/` when logged in | redirect to `/direct/inbox/` |
+| Reels feed | `/reels/` | redirect to `/direct/inbox/` |
+| Explore and search | `/explore/…` (including `/explore/search/`), search panel | block; hide search entry points |
+| Account, auth, settings | `/accounts/…`, `/challenge/…`, etc. | allow |
+
+- Principle: **one hop**. Content (a reel, a story) is reachable only from a hub (DM, profile, post), never from another content item.
+- Unknown routes: allow, and log them in DEBUG for review.
+- The exact web behavior (reel opened as an overlay vs a navigation, story URL shapes) must be checked in the Safari Web Inspector before being encoded. Route regexes move into `config.json` in Step 3, with bundled defaults.
+- Out of scope: search, share extension, universal links. Reel links received outside the app keep opening in the browser or Instagram as usual.
+
+### Injection engine (Step 2)
+- Three layers, from most to least stable:
+  1. Route guard (above).
+  2. Declarative CSS injected at `documentStart`: the main hiding mechanism. No flash, applies to nodes added later, no CPU cost. `:has()` is available (iOS 15.4+).
+  3. `MutationObserver`, throttled with `requestAnimationFrame`, only for what CSS can't do: text-based detection, scroll or gesture lock on the single-reel page.
+- Anchor stability, best first: pathname > `a[href]` > `role` and semantic tags (`main`, `nav`, `dialog`) > structure relative to a stable anchor (`:has()`, `closest()`) > `aria-label` (localized: needs a per-locale table in the config). **Never** obfuscated atomic classes (`x1n2onr6`…) or generated ids.
+- Content worlds: the filter engine runs in `WKContentWorld.world(name: "focus")`. Only the history hook runs in `.page`. All scripts use `forMainFrameOnly: true`.
+- Each rule is inserted separately with `CSSStyleSheet.insertRule` inside `try/catch`, so one invalid selector never breaks the sheet.
+- The engine exposes `__focus.apply(config)` in the focus world, for hot reload through `callAsyncJavaScript`.
+- Health check: each rule declares the routes where it must match (`expectOn`). If it matches nothing after N seconds, the engine posts `ruleHealth` to native, which logs it locally and forces a config refresh.
+
+### Over-the-air config (Step 3)
+- Startup: load the last valid cached config, else the bundled `config.default.json`; install the user scripts; load the web view **immediately**. Never wait for the network.
+- Background fetch (5 s timeout, `If-None-Match` with the stored ETag, `reloadIgnoringLocalCacheData`) at launch, and on `scenePhase == .active` when the last fetch is older than 6 h.
+- On `200`: validate (strict `Codable`, size ≤ 64 KB, every regex compiles, `schema` and `minEngine` compatible with the app, Ed25519 signature checked with CryptoKit against the bundled public key over the exact bytes, file `config.json.sig`), then persist, then hot-apply: `removeAllUserScripts()` + reinstall (for future loads), then `callAsyncJavaScript("__focus.apply(cfg)")` in the focus world (current page, no reload). Any failure keeps the last valid config. `304`: nothing to do.
+- Schema sketch:
+  ```json
+  {
+    "schema": 1,
+    "minEngine": 1,
+    "revision": "2026-09-29.1",
+    "routes": { "redirectHomeTo": "/direct/inbox/", "blocked": ["^/reels/?$", "^/explore(/|$)"], "dmOnly": ["^/reels?/[\\w-]+/?$"] },
+    "rules": [ { "id": "nav.reels", "css": "*:has(> a[href='/reels/'])", "expectOn": ["^/direct/"] } ],
+    "i18n": { "fr": { "suggested": "Suggestions pour vous" } }
+  }
+  ```
+- Hosting: GitHub Pages from `remote-config/`. The private signing key never goes in the repo.
+
+### Storage and metrics (Step 4)
+Preferences and usage metrics in SwiftData, on device only. Details are decided at Step 4.
+
+## Roadmap
+- [x] Step 0: project setup (XcodeGen, targets, CLAUDE.md)
+- [ ] Step 1: foundation and persistent web view (BrowserEngine, configuration, navigation hygiene, route hook skeleton)
+- [ ] Step 2: JS/CSS injection engine
+- [ ] Step 3: over-the-air config
+- [ ] Step 4: SwiftData preferences and metrics
+- [ ] Step 5: polish, native navigation, onboarding (UI by the owner)
+
+## Working rules for Claude Code
+- At the start of each step, read this file and the existing code to get the full status. Work only on the requested step; don't anticipate later ones.
+- Ask about genuine ambiguities before coding instead of improvising.
+- Each step = one implementation prompt, then a separate audit prompt.
+- A step is done when: `xcodegen generate` is clean, the build succeeds, tests pass on a simulator, and no new warnings appear. Then update the Roadmap and the Decisions log in this file and commit on `main` (linear history, message `step-N: <summary>`).
+- Anything that needs a real iPhone or a logged-in Instagram account to verify goes into `docs/DEVICE_CHECKLIST.md`. Never claim it works without that check.
+- Placeholder UI only. The owner designs the real UI.
+
+## Decisions log
+- 2026-09-29: architecture validated (this file). Allowed: DMs, profiles, posts, single reels and stories reached from a hub. Blocked: home feed, Reels feed, Explore, search. No share extension. iOS 17 minimum. TestFlight first. Project generated with XcodeGen.
+~~~~
