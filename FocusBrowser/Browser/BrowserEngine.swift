@@ -20,12 +20,13 @@ final class BrowserEngine: NSObject {
     private(set) var currentPath: String?
     /// Whether a non-empty `sessionid` cookie exists (read natively; HttpOnly, invisible to JS).
     private(set) var isLoggedIn = false
-    /// Set to present an external link in `SFSafariViewController`.
-    var safariRequest: SafariRequest?
 
     private var lastAllowedURL = BrowserConfiguration.startURL
+    private let openExternally: @MainActor (URL) -> Void
 
-    init(loadOnInit: Bool = true) {
+    /// `openExternally` shows a non-Instagram link; by default in `SFSafariViewController`.
+    init(loadOnInit: Bool = true, openExternally: @escaping @MainActor (URL) -> Void = SafariPresenter.present) {
+        self.openExternally = openExternally
         let handler = WeakScriptMessageHandler()
         let configuration = BrowserConfiguration.makeWebViewConfiguration(routeHandler: handler)
         webView = WKWebView(frame: .zero, configuration: configuration)
@@ -60,8 +61,12 @@ final class BrowserEngine: NSObject {
     }
 
     /// Applies navigation hygiene; returns whether the navigation may proceed in the web view.
-    private func admit(_ url: URL?, isMainFrame: Bool) -> Bool {
-        switch NavigationHygiene.verdict(for: url, isMainFrame: isMainFrame) {
+    private func admit(_ url: URL?, isMainFrame: Bool, source: String) -> Bool {
+        let verdict = NavigationHygiene.verdict(for: url, isMainFrame: isMainFrame)
+        #if DEBUG
+        print("[FocusBrowser] \(source) main=\(isMainFrame) \(Self.loggable(url)) -> \(Self.loggable(verdict))")
+        #endif
+        switch verdict {
         case .allow:
             if isMainFrame, let url, url.scheme == "http" || url.scheme == "https" {
                 lastAllowedURL = url
@@ -70,10 +75,26 @@ final class BrowserEngine: NSObject {
         case .cancel:
             return false
         case .openInSafari(let external):
-            safariRequest = SafariRequest(url: external)
+            openExternally(external)
             return false
         }
     }
+
+    #if DEBUG
+    /// scheme://host/path only: query strings and fragments can carry tokens.
+    private static func loggable(_ url: URL?) -> String {
+        guard let url else { return "nil" }
+        return "\(url.scheme ?? "?")://\(url.host ?? "")\(url.path)"
+    }
+
+    private static func loggable(_ verdict: NavigationVerdict) -> String {
+        switch verdict {
+        case .allow: "allow"
+        case .cancel: "cancel"
+        case .openInSafari(let url): "openInSafari(\(loggable(url)))"
+        }
+    }
+    #endif
 }
 
 extension BrowserEngine: WKNavigationDelegate {
@@ -83,7 +104,7 @@ extension BrowserEngine: WKNavigationDelegate {
     ) async -> WKNavigationActionPolicy {
         // A nil target frame means a new-window request (target=_blank): treat it as main frame.
         let isMainFrame = navigationAction.targetFrame?.isMainFrame ?? true
-        return admit(navigationAction.request.url, isMainFrame: isMainFrame) ? .allow : .cancel
+        return admit(navigationAction.request.url, isMainFrame: isMainFrame, source: "decidePolicyFor") ? .allow : .cancel
     }
 
     func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
@@ -103,7 +124,7 @@ extension BrowserEngine: WKUIDelegate {
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
         // Never open a second web view: same-site links load in ours, external ones go to Safari.
-        if admit(navigationAction.request.url, isMainFrame: true) {
+        if admit(navigationAction.request.url, isMainFrame: true, source: "createWebViewWith") {
             webView.load(navigationAction.request)
         }
         return nil

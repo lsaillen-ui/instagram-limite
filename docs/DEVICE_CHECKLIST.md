@@ -15,3 +15,5 @@ Items that need a real iPhone or a logged-in Instagram account to verify. Filled
 - [ ] Route hook: with Safari Web Inspector (Develop → device → page), navigating inside the app changes `BrowserEngine.currentPath` (breakpoint or temporary debug print). Confirms `pushState` calls are seen on the real site.
 - [ ] Web process termination (Safari inspector, or memory pressure): the page reloads instead of staying blank.
 - [ ] `isLoggedIn` flips to true after login and false after logout (cookie `sessionid`), checked with a temporary debug print.
+- [ ] Cookie banner on first launch (logged out, fresh install): tapping "Allow all cookies" (and "Decline optional cookies") does not crash; the banner goes away and the login page stays usable. Read the DEBUG console for `decidePolicyFor` / `createWebViewWith` lines and note every host that ends in `openInSafari`.
+- [ ] An external link opened in `SFSafariViewController` can be dismissed with Done; a second external link afterwards opens normally; rapid double taps present only one.
