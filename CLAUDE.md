@@ -122,7 +122,7 @@ Preferences and usage metrics in SwiftData, on device only. Details are decided 
 
 ## Roadmap
 - [x] Step 0: project setup (XcodeGen, targets, CLAUDE.md)
-- [ ] Step 1: foundation and persistent web view (BrowserEngine, configuration, navigation hygiene, route hook skeleton)
+- [x] Step 1: foundation and persistent web view (BrowserEngine, configuration, navigation hygiene, route hook skeleton)
 - [ ] Step 2: JS/CSS injection engine
 - [ ] Step 3: over-the-air config
 - [ ] Step 4: SwiftData preferences and metrics
@@ -138,3 +138,4 @@ Preferences and usage metrics in SwiftData, on device only. Details are decided 
 
 ## Decisions log
 - 2026-09-29: architecture validated (this file). Allowed: DMs, profiles, posts, single reels and stories reached from a hub. Blocked: home feed, Reels feed, Explore, search. No share extension. iOS 17 minimum. TestFlight first. Project generated with XcodeGen.
+- 2026-09-29: Step 1 done. `BrowserEngine` (`@MainActor @Observable`, `NSObject`) owns the single `WKWebView`, created in `FocusBrowserApp.init`. Pure, tested logic lives in `NavigationHygiene` (verdicts `allow`/`cancel`/`openInSafari`) and `RouteMessage` (validates the untrusted `.page`-world payload). Choices beyond the spec: (1) subframe navigations are allowed except app-launching schemes and `apps.apple.com`; (2) a nil target frame (new-window request) is treated as main frame; (3) same-site `target=_blank` links load in the existing web view, external ones go to Safari, and `createWebViewWith` always returns `nil`; (4) other non-http(s) schemes (`mailto:`, `tel:`…) are cancelled, `about:`/`blob:`/`data:` are allowed; (5) the base script runs in the `focus` world, the route hook in `.page`, both `documentStart` and main frame only; the initial route is posted on `DOMContentLoaded` (documentEnd equivalent); (6) the route hook only stores `BrowserEngine.currentPath` for now, no route policy until Step 2; (7) auth state is `BrowserEngine.isLoggedIn` (non-empty `sessionid`), refreshed on cookie change and page load; (8) bundled scripts live in `Resources/Injection/` and are loaded from `Bundle.main`. `DEVELOPMENT_TEAM` is set in `project.yml` (it was in the `.pbxproj` only, and would have been wiped by the next `xcodegen generate`). Integration tests run the bundled scripts in an offline `WKWebView`. Device checks are in `docs/DEVICE_CHECKLIST.md`.
