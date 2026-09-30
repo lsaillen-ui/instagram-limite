@@ -22,9 +22,9 @@ struct BrowserConfigurationTests {
 
         let scripts = configuration.userContentController.userScripts
         #if DEBUG
-        #expect(scripts.count == 3)  // base, route hook, recon
+        #expect(scripts.count == 4)  // base, route hook, recon, focus engine
         #else
-        #expect(scripts.count == 2)
+        #expect(scripts.count == 3)
         #endif
         #expect(scripts.allSatisfy { $0.injectionTime == .atDocumentStart && $0.isForMainFrameOnly })
     }
@@ -32,6 +32,7 @@ struct BrowserConfigurationTests {
     @Test func bundledScriptsArePresent() {
         #expect(!BrowserConfiguration.scriptSource(named: "base").isEmpty)
         #expect(!BrowserConfiguration.scriptSource(named: "route-hook").isEmpty)
+        #expect(!BrowserConfiguration.scriptSource(named: "focus-engine").isEmpty)
         #if DEBUG
         #expect(!BrowserConfiguration.scriptSource(named: "recon").isEmpty)
         #endif

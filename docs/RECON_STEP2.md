@@ -92,14 +92,32 @@ Consequence: the "reel → another reel = `goBack`" rule cannot apply to DM reel
 - **Videos**: on the reel page (`/{user}/reel/{id}/`) there is 1 `video`, not playing (autoplay is off as configured), and no other slides in the DOM.
 - **Story links**: `/stories/{user}/{id}/?…` appears in a conversation (a story mention or reply), and `/stories/highlights/{id}/` on profiles. A story was never opened in this round.
 
-### Not observed (needs a second round)
+### Round 2 findings
 
-1. Swipe up on the DM overlay: does it advance, and does the URL or `history.length` ever change?
-2. Swipe up on a page reel `/{user}/reel/{id}/`: does it navigate to another reel (route change) or scroll inside the page?
-3. Stories: URL shape when opened, and the advance to the next person's story.
-4. The Reels bottom-bar icon (`/reels/`) and how the feed behaves.
-5. Which control brought the user from the inbox to `/`.
-6. The DOM ancestors of the DM overlay scroller (needed to find an anchor other than "a `div` at depth 19 that contains videos").
+Same conventions (redacted, iPhone 13, iOS 27.0.1). Scenarios A (DM reel), B (profile reel), C (stories) and the inbox Back arrow were captured. The Reels bottom-bar icon (D) was not tapped: `/reels/` is blocked by pattern anyway.
+
+**A. Reel opened from a conversation (overlay).** No route event, no dialog, `history.length` unchanged. One swipe up advanced exactly one slide: the scroller's `scrollTop` went 0 → 693 (its own height) and the video in view went from index 0 to 1. Closing removed the overlay (0 videos). The feed is lazy: 3 videos and `scrollHeight` 2141 on open, 9 videos and 6299 after the first swipe.
+
+The overlay scroller is a `div` with no role and no aria-label, 390×693. Nearest-first ancestors: `div`, `div`, `div`, `div`, `div` (absolute), `div`, `div` (fixed), `div`. The fixed ancestor is the app's own full-viewport container (390×763): it exists on every page, with or without the overlay, so "a fixed element with a video" does not identify the overlay. The slides are not direct children of the scroller (2 children for 9 videos), so child counts are useless too. The one stable handle is the `video` element: the overlay is a vertically scrollable box whose videos are full-size slides.
+
+**B. Reel opened from a profile grid (page).** `push /{user}/reel/{id}/`. The page holds 1 video and scrolls the document by 130 px at most. A swipe up changed nothing (`scrollTop` stayed at its maximum, no route event). A page reel is a single reel. Back is a `pop` to the profile.
+
+**C. Stories.** From the home feed: `push /stories/{user}/`, then `replace /stories/{user}/{itemId}/` (the item id is added by a replace), then, when the story ended, `replace /stories/{other user}/{itemId}/`. So the auto-advance to the next person is a `replace` with a different owner. Closing is a `pop` to the previous page. The viewer has no scroller; its layers are full-size divs, one of them holding the video.
+
+**Inbox Back arrow.** Both times the user left the inbox, the log shows `push /` right after `push /direct/inbox/`, with nothing else in between. The header Back arrow is the only control that leads out of the inbox, so it is the cause. Its target is the home feed.
+
+**Explore.** Tapping the Explore icon gives `push /explore/` immediately followed by `push /explore/search/`.
+
+**More URL shapes.** Posts also live at `/{user}/p/{id}/` (grid tiles). Highlights: `/stories/highlights/{id}/`. `/reels/audio/{id}/` links appear inside reels (an infinite surface). Hashtag and location links inside captions point to `/explore/tags/…` and `/explore/locations/…`.
+
+**Chat scroller.** The conversation scroller is `column-reverse` (its `scrollTop` is negative).
+
+### What Phase B does with this
+
+- Page reels and stories follow the policy table (single item, reached from a hub, `goBack` on chaining). Classifier shapes: `/reel/{id}/`, `/reels/{id}/`, `/{user}/reel/{id}/`; `/stories/{user}/{item}/`; `/stories/highlights/{id}/`; posts at `/p/{id}/` and `/{user}/p/{id}/`.
+- `/reels/`, `/reels/audio/…` and `/explore/…` are blocked (redirect to the inbox) and their links are stopped by the click guard.
+- The overlay feed is locked from the DOM (behavior layer): a vertically scrollable box whose video is a full-size slide and that has more slides below. The lock stops touch scrolling and scripted scrolling, and leaves taps and nested scrollers alone.
+- The inbox Back arrow ends in `push /`, which the policy redirects back to the inbox.
 
 ### Privacy note on the recon logs
 

@@ -11,7 +11,11 @@ enum BrowserConfiguration {
         "Version/\(osMajorVersion).0 Mobile/15E148 Safari/604.1"
     }
 
-    static func makeWebViewConfiguration(routeHandler: WKScriptMessageHandler) -> WKWebViewConfiguration {
+    /// `routeHandler` receives the page-world `route` messages and the focus-world `focusHealth` messages.
+    static func makeWebViewConfiguration(
+        routeHandler: WKScriptMessageHandler,
+        filterConfig: FilterConfig = .bundledDefault()
+    ) -> WKWebViewConfiguration {
         let configuration = WKWebViewConfiguration()
         configuration.websiteDataStore = .default()
         configuration.applicationNameForUserAgent = applicationName(
@@ -41,7 +45,19 @@ enum BrowserConfiguration {
             in: focusWorld
         ))
         #endif
+        // Engine source + one `__focus.apply(<json>)` call; the json is re-encoded from the
+        // validated config, never raw file bytes.
+        guard let engineSource = try? InjectionScripts.focusEngine(config: filterConfig) else {
+            preconditionFailure("The filter config could not be encoded")
+        }
+        controller.addUserScript(WKUserScript(
+            source: engineSource,
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true,
+            in: focusWorld
+        ))
         controller.add(routeHandler, contentWorld: .page, name: RouteMessage.handlerName)
+        controller.add(routeHandler, contentWorld: focusWorld, name: FocusHealthMessage.handlerName)
         return configuration
     }
 

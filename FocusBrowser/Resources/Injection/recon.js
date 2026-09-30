@@ -238,8 +238,10 @@
     for (var i = 0; i < all.length; i++) {
       var element = all[i];
       if (element.clientHeight === 0 || element.scrollHeight <= element.clientHeight + 1) continue;
+      // A feed the engine locked is `overflow-y: hidden` now, but it is still the scroller we want to see.
+      var locked = element.hasAttribute("data-focus-lock");
       var overflow = getComputedStyle(element).overflowY;
-      if (overflow !== "auto" && overflow !== "scroll") continue;
+      if (!locked && overflow !== "auto" && overflow !== "scroll") continue;
       var entry = {
         tag: element.tagName.toLowerCase(),
         depth: depthOf(element),
@@ -250,6 +252,7 @@
         ancestors: ancestorsOf(element),
         children: element.children.length
       };
+      if (locked) entry.locked = true;
       var videoChildren = 0;
       for (var c = 0; c < element.children.length; c++) {
         if (element.children[c].querySelector("video")) videoChildren++;

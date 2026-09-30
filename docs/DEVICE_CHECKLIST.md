@@ -17,3 +17,27 @@ Items that need a real iPhone or a logged-in Instagram account to verify. Filled
 - [ ] `isLoggedIn` flips to true after login and false after logout (cookie `sessionid`), checked with a temporary debug print.
 - [x] Cookie banner on first launch (logged out, fresh install): tapping "Allow all cookies" (and "Decline optional cookies") does not crash; the banner goes away and the login page stays usable. Read the DEBUG console for `decidePolicyFor` / `createWebViewWith` lines and note every host that ends in `openInSafari`.
 - [ ] An external link opened in `SFSafariViewController` can be dismissed with Done; a second external link afterwards opens normally; rapid double taps present only one.
+
+## Step 2: route policy and injection engine
+Logged in, on the iPhone, with the DEBUG log open (`[FocusBrowser] route: … -> allow|goBack|redirect(…)`). "Returned to hub" means the page is back on the conversation, profile or post you came from.
+
+- [ ] No flash of the Home, Explore and Reels icons of the bottom bar when a page with the bar loads (profile, post, reel).
+- [ ] The Home, Explore and Reels icons are gone from the bottom bar on profiles, posts and reels; the Messages icon and the profile icon are still there and work. Note how the bar looks with three icons missing (placeholder UI, the owner designs the real one).
+- [ ] Inbox Back arrow (top left): you stay on the inbox (the log shows `push /` then `redirect`); no home feed, no long reload.
+- [ ] Tapping a hashtag, location or "audio" link inside a reel or a caption does nothing (no `/explore/…` or `/reels/audio/…` page).
+- [ ] Recon scenario A: a reel received in a conversation opens; play, pause, sound, like, comment and the Close cross work; **swiping up does not move to another reel**; the conversation is intact after Close. Opening a second reel afterwards works and is locked too.
+- [ ] Recon scenario A, comments and emoji panel of the overlay still scroll (the lock must not swallow nested scrollers).
+- [ ] The conversation itself still scrolls normally, including with a video message in it (the lock must not touch the chat).
+- [ ] Recon scenario B: a reel opened from a profile's Reels tab opens as a page; swiping does nothing; Back returns to the profile (returned to hub).
+- [ ] Recon scenario C: a story opened from a profile avatar plays; when it ends and would advance to another person, the page goes back to the profile (returned to hub), not into the next person's story. Tapping through several stories of the same person works.
+- [ ] A story reply or mention received in a conversation opens, and closing returns to the conversation.
+- [ ] Reel → post → profile, tapped by hand (hub → hub), is allowed at every step.
+- [ ] Opening a post from a conversation, then Back, returns to the conversation.
+- [ ] Explore: the search entry points are unreachable from the bottom bar; if you land on `/explore/…` by any other path, you end on the inbox.
+- [ ] Log in from scratch (logged out): the login flow is never redirected; right after logging in you land on the inbox, not the home feed.
+- [ ] Relaunch the app while a reel or story was open: it starts on the inbox (cold content is redirected).
+- [ ] Web process termination while a reel is open: the page reloads on the inbox, not on the reel.
+- [ ] The loop guard never triggers in normal use: no `loop` line and no burst of `goBack` / `redirect` lines in the DEBUG log.
+- [ ] `[FocusBrowser] health:` lines: none on a post page after 5 s (the bottom-bar rules match). Note any rule listed, and the page it was on.
+- [ ] Unknown routes: skim the log for `unknown route` lines and note each path shape.
+

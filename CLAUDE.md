@@ -77,16 +77,18 @@ Policy (owner decisions, 2026-09-29):
 | DMs | `/direct/…` | allow (hub) |
 | Profiles | `/{username}/` and its tabs | allow (hub) |
 | Posts | `/p/{id}/` | allow (hub) |
-| Single reel | `/reel/{id}/` (and `/reels/{id}/`) | allow only when arriving from a hub; reel → another reel = `goBack`; cold arrival = redirect to inbox |
-| Stories | `/stories/{user}/…` | allow when arriving from a hub; auto-advance to another user's stories = `goBack` |
-| Home feed | `/` when logged in | redirect to `/direct/inbox/` |
-| Reels feed | `/reels/` | redirect to `/direct/inbox/` |
-| Explore and search | `/explore/…` (including `/explore/search/`), search panel | block; hide search entry points |
+| Single reel (page) | `/{user}/reel/{id}/`, `/reel/{id}/`, `/reels/{id}/` | allow only when arriving from a hub; reel → another reel = `goBack`; cold arrival = redirect to inbox. A swipe on a page reel does nothing, it is a single reel. |
+| Reel opened in a conversation (overlay) | no URL change (stays `/direct/t/{id}/`) | the overlay is an infinite feed (about 9 slides, lazy loaded): the route layer cannot see it, so the behavior layer locks its vertical scroll (see Injection engine) |
+| Stories | `/stories/{user}/`, then `/stories/{user}/{item}/`, `/stories/highlights/{id}/` | allow when arriving from a hub; the next story of the same user is allowed; auto-advance to another user's stories (a `replace` with another owner) = `goBack` |
+| Home feed | `/` when logged in (the inbox's Back arrow pushes it) | redirect to `/direct/inbox/` |
+| Reels feed | `/reels/`, `/reels/audio/…` | redirect to `/direct/inbox/` |
+| Explore and search | `/explore/…` (including `/explore/search/`, tags, locations) | block (redirect); hide the bottom-bar entry point; the click guard stops links to it |
 | Account, auth, settings | `/accounts/…`, `/challenge/…`, etc. | allow |
 
 - Principle: **one hop**. Content (a reel, a story) is reachable only from a hub (DM, profile, post), never from another content item.
-- Unknown routes: allow, and log them in DEBUG for review.
-- The exact web behavior (reel opened as an overlay vs a navigation, story URL shapes) must be checked in the Safari Web Inspector before being encoded. Route regexes move into `config.json` in Step 3, with bundled defaults.
+- Unknown routes: allow, leave the navigation state untouched, and log them in DEBUG for review.
+- Implemented in `Routing/`: `RouteClassifier` (path → `RouteKind`, patterns from the config with built-in fallbacks), `RoutePolicy` + `NavigationState` (pure, unit-tested). `pop` is never answered with `goBack` (loop); `pop` to content is allowed only if it is the content currently open; more than 3 forced navigations within 2 s trips the loop guard (one redirect to the inbox, then no forcing for 2 s). Full-page navigations go through the same policy (kind `initial`) in `decidePolicyFor`, after `NavigationHygiene`.
+- Observed behavior is recorded in `docs/RECON_STEP2.md`. Route patterns live in `filters.default.json` (and later the remote `config.json`).
 - Out of scope: search, share extension, universal links. Reel links received outside the app keep opening in the browser or Instagram as usual.
 
 ### Injection engine (Step 2)
@@ -94,24 +96,33 @@ Policy (owner decisions, 2026-09-29):
   1. Route guard (above).
   2. Declarative CSS injected at `documentStart`: the main hiding mechanism. No flash, applies to nodes added later, no CPU cost. `:has()` is available (iOS 15.4+).
   3. `MutationObserver`, throttled with `requestAnimationFrame`, only for what CSS can't do: text-based detection, scroll or gesture lock on the single-reel page.
+- Rules are data: `{ id, hide, routeScope?, expectOn? }`. `hide` is a CSS selector list, the engine wraps it in `display: none !important`, so a rule cannot carry declarations. `FilterConfig` refuses selectors containing `{ } ; @` or a newline.
 - Anchor stability, best first: pathname > `a[href]` > `role` and semantic tags (`main`, `nav`, `dialog`) > structure relative to a stable anchor (`:has()`, `closest()`) > `aria-label` (localized: needs a per-locale table in the config). **Never** obfuscated atomic classes (`x1n2onr6`…) or generated ids.
 - Content worlds: the filter engine runs in `WKContentWorld.world(name: "focus")`. Only the history hook runs in `.page`. All scripts use `forMainFrameOnly: true`.
 - Each rule is inserted separately with `CSSStyleSheet.insertRule` inside `try/catch`, so one invalid selector never breaks the sheet.
-- The engine exposes `__focus.apply(config)` in the focus world, for hot reload through `callAsyncJavaScript`.
+- The engine exposes `__focus.apply(config)` in the focus world, for hot reload through `callAsyncJavaScript`. It also exposes `setRoute(name)` (sets `data-focus-route` on `<html>`, which React does not own) and `setLoggedIn(bool)` (the session cookie is HttpOnly, so native tells the page).
+- **Click guard**: a capture-phase `click` listener on `document` stops clicks on links to blocked routes (`routes.blocked`, patterns from the config) while logged in, before the site renders anything.
+- **Reel feed lock** (behavior layer, `MutationObserver` throttled with rAF, plus a timer fallback): a reel feed is the nearest vertically scrollable ancestor of a `video` when that video is a full-size slide (≥ 90% of the scroller's width, ≥ 75% of its height) and the scroller holds at least 1.4 screens. It gets `data-focus-lock="reel"` (CSS: `overflow-y: hidden`), snaps back from scripted scrolling, and a vertical `touchmove` on it is cancelled unless it starts in a nested scroller (comments list). The chat scroller does not qualify (its videos are smaller). Anchor: the `video` tag, since the overlay has no role, no label and no stable ancestor.
+- The config reaches the page as `engine source + "\n__focus.apply(<json>)"`, the JSON re-encoded by `JSONEncoder` from the validated `FilterConfig` (built-in route patterns filled in), never the raw file bytes.
 - Health check: each rule declares the routes where it must match (`expectOn`). If it matches nothing after N seconds, the engine posts `ruleHealth` to native, which logs it locally and forces a config refresh.
 
 ### Over-the-air config (Step 3)
 - Startup: load the last valid cached config, else the bundled `config.default.json`; install the user scripts; load the web view **immediately**. Never wait for the network.
 - Background fetch (5 s timeout, `If-None-Match` with the stored ETag, `reloadIgnoringLocalCacheData`) at launch, and on `scenePhase == .active` when the last fetch is older than 6 h.
 - On `200`: validate (strict `Codable`, size ≤ 64 KB, every regex compiles, `schema` and `minEngine` compatible with the app, Ed25519 signature checked with CryptoKit against the bundled public key over the exact bytes, file `config.json.sig`), then persist, then hot-apply: `removeAllUserScripts()` + reinstall (for future loads), then `callAsyncJavaScript("__focus.apply(cfg)")` in the focus world (current page, no reload). Any failure keeps the last valid config. `304`: nothing to do.
+- `blocked` holds route kind names (`RouteKind.name`); `patterns` is an optional per-kind regex override (missing kinds use the built-in patterns, `reel` and `story` patterns need a capture group); `routeScope` holds kind names; the decoder rejects unknown keys.
 - Schema sketch:
   ```json
   {
     "schema": 1,
     "minEngine": 1,
     "revision": "2026-09-29.1",
-    "routes": { "redirectHomeTo": "/direct/inbox/", "blocked": ["^/reels/?$", "^/explore(/|$)"], "dmOnly": ["^/reels?/[\\w-]+/?$"] },
-    "rules": [ { "id": "nav.reels", "css": "*:has(> a[href='/reels/'])", "expectOn": ["^/direct/"] } ],
+    "routes": {
+      "redirectHomeTo": "/direct/inbox/",
+      "blocked": ["homeFeed", "reelsFeed", "explore"],
+      "patterns": { "explore": ["^/explore(/|$)"] }
+    },
+    "rules": [ { "id": "nav.reels", "hide": "a[href=\"/reels/\"]", "routeScope": ["post"], "expectOn": ["^/p/"] } ],
     "i18n": { "fr": { "suggested": "Suggestions pour vous" } }
   }
   ```
@@ -123,7 +134,7 @@ Preferences and usage metrics in SwiftData, on device only. Details are decided 
 ## Roadmap
 - [x] Step 0: project setup (XcodeGen, targets, CLAUDE.md)
 - [x] Step 1: foundation and persistent web view (BrowserEngine, configuration, navigation hygiene, route hook skeleton)
-- [ ] Step 2: JS/CSS injection engine
+- [x] Step 2: route policy and JS/CSS injection engine
 - [ ] Step 3: over-the-air config
 - [ ] Step 4: SwiftData preferences and metrics
 - [ ] Step 5: polish, native navigation, onboarding (UI by the owner)
@@ -140,3 +151,4 @@ Preferences and usage metrics in SwiftData, on device only. Details are decided 
 - 2026-09-29: architecture validated (this file). Allowed: DMs, profiles, posts, single reels and stories reached from a hub. Blocked: home feed, Reels feed, Explore, search. No share extension. iOS 17 minimum. TestFlight first. Project generated with XcodeGen.
 - 2026-09-29: Step 1 done. `BrowserEngine` (`@MainActor @Observable`, `NSObject`) owns the single `WKWebView`, created in `FocusBrowserApp.init`. Pure, tested logic lives in `NavigationHygiene` (verdicts `allow`/`cancel`/`openInSafari`) and `RouteMessage` (validates the untrusted `.page`-world payload). Choices beyond the spec: (1) subframe navigations are allowed except app-launching schemes and `apps.apple.com`; (2) a nil target frame (new-window request) is treated as main frame; (3) same-site `target=_blank` links load in the existing web view, external ones go to Safari, and `createWebViewWith` always returns `nil`; (4) other non-http(s) schemes (`mailto:`, `tel:`…) are cancelled, `about:`/`blob:`/`data:` are allowed; (5) the base script runs in the `focus` world, the route hook in `.page`, both `documentStart` and main frame only; the initial route is posted on `DOMContentLoaded` (documentEnd equivalent); (6) the route hook only stores `BrowserEngine.currentPath` for now, no route policy until Step 2; (7) auth state is `BrowserEngine.isLoggedIn` (non-empty `sessionid`), refreshed on cookie change and page load; (8) bundled scripts live in `Resources/Injection/` and are loaded from `Bundle.main`. `DEVELOPMENT_TEAM` is set in `project.yml` (it was in the `.pbxproj` only, and would have been wiped by the next `xcodegen generate`). Integration tests run the bundled scripts in an offline `WKWebView`. Device checks are in `docs/DEVICE_CHECKLIST.md`.
 - 2026-09-30: Step 1 crash fixed. Any tap on the web view crashed the app (not only the cookie banner) because `BrowserEngine`/`WKWebView` was created in `FocusBrowserApp.init`, before the app had a window. Bisected on device and simulator: base script, route hook, UA, media settings, scroll settings, delegates, SwiftUI vs UIKit hosting and `SFSafariViewController` were all ruled out. Fix: create the engine in the first scene's `onAppear` (`FocusBrowserApp.engine` is optional until then). Supersedes the "created in `FocusBrowserApp.init`" part of the 2026-09-29 Step 1 entry. Known build warning, present since Step 0: "All interface orientations must be supported unless the app requires full screen" (portrait-only is an owner decision).
+- 2026-09-30: Step 2 done (code; device checks in `docs/DEVICE_CHECKLIST.md`). Two phases: DEBUG recon tooling (redacted route logging, DOM snapshots, Mark button; excluded from Release), then the implementation from what the recon showed (`docs/RECON_STEP2.md`). **Observed, and different from the plan**: a reel received in a conversation opens as an overlay with no URL change and holds a lazy-loaded feed of about 9 reels, so the route layer cannot police it (owner decided: lock its vertical swipe from the DOM); profile reels are `/{user}/reel/{id}/`; story auto-advance is a `replace` with another owner; the inbox's Back arrow pushes `/`; the bottom bar links are in no `nav`. **Chosen**: `RouteClassifier` + `RoutePolicy` (pure) as described in "Route guard"; `FilterConfig` (strict keys, size ≤ 64 KB, regexes compile, unique ids, `minEngine`), bundled as `filters.default.json`, with route patterns in the file and built-in fallbacks; rules are `hide` selectors (no free CSS), so the sketch's `css` field became `hide` and its `blocked`/`dmOnly` regex lists became `blocked` kind names plus per-kind `patterns`; engine `focus-engine.js` (rules, click guard, reel feed lock, health check posting `focusHealth` from the focus world); `BrowserEngine` applies decisions (`goBack`, `location.replace`), publishes `data-focus-route` and `setLoggedIn`, re-judges the current route when the login cookie appears, keeps the last 20 health failures in memory. **Left out**: the optional text-based hiding of "Suggested for you" blocks (the `i18n` table is loaded and validated but unused), hiding the inbox Back arrow (the policy handles its `push /`), hot config swap and fetching (Step 3). **Left for the device**: everything in the Step 2 checklist, notably whether the lock survives Instagram changes and leaves comments and taps alone, how the bottom bar looks with three icons hidden, and the `unknown route` lines.
