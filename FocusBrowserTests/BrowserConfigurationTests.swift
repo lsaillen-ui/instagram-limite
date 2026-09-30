@@ -21,12 +21,19 @@ struct BrowserConfigurationTests {
         #expect(configuration.applicationNameForUserAgent?.contains("Safari/") == true)
 
         let scripts = configuration.userContentController.userScripts
+        #if DEBUG
+        #expect(scripts.count == 3)  // base, route hook, recon
+        #else
         #expect(scripts.count == 2)
+        #endif
         #expect(scripts.allSatisfy { $0.injectionTime == .atDocumentStart && $0.isForMainFrameOnly })
     }
 
     @Test func bundledScriptsArePresent() {
         #expect(!BrowserConfiguration.scriptSource(named: "base").isEmpty)
         #expect(!BrowserConfiguration.scriptSource(named: "route-hook").isEmpty)
+        #if DEBUG
+        #expect(!BrowserConfiguration.scriptSource(named: "recon").isEmpty)
+        #endif
     }
 }

@@ -18,11 +18,16 @@ final class BrowserEngine: NSObject {
 
     /// Last `location.pathname` reported by the route hook. Step 2 feeds it to the route policy.
     private(set) var currentPath: String?
+    /// Last route change reported by the route hook, with how the page got there.
+    private(set) var lastRouteEvent: RouteEvent?
     /// Whether a non-empty `sessionid` cookie exists (read natively; HttpOnly, invisible to JS).
     private(set) var isLoggedIn = false
 
     private var lastAllowedURL = BrowserConfiguration.startURL
     private let openExternally: @MainActor (URL) -> Void
+    #if DEBUG
+    @ObservationIgnored private let recon = Recon()
+    #endif
 
     /// `openExternally` shows a non-Instagram link; by default in `SFSafariViewController`.
     init(loadOnInit: Bool = true, openExternally: @escaping @MainActor (URL) -> Void = SafariPresenter.present) {
@@ -64,7 +69,7 @@ final class BrowserEngine: NSObject {
     private func admit(_ url: URL?, isMainFrame: Bool, source: String) -> Bool {
         let verdict = NavigationHygiene.verdict(for: url, isMainFrame: isMainFrame)
         #if DEBUG
-        print("[FocusBrowser] \(source) main=\(isMainFrame) \(Self.loggable(url)) -> \(Self.loggable(verdict))")
+        print("[FocusBrowser] \(source) main=\(isMainFrame) \(recon.loggable(url)) -> \(loggable(verdict))")
         #endif
         switch verdict {
         case .allow:
@@ -81,17 +86,16 @@ final class BrowserEngine: NSObject {
     }
 
     #if DEBUG
-    /// scheme://host/path only: query strings and fragments can carry tokens.
-    private static func loggable(_ url: URL?) -> String {
-        guard let url else { return "nil" }
-        return "\(url.scheme ?? "?")://\(url.host ?? "")\(url.path)"
+    /// Marks the current state in the recon log and snapshots the page immediately.
+    func mark() {
+        recon.mark(currentPath: currentPath, in: webView)
     }
 
-    private static func loggable(_ verdict: NavigationVerdict) -> String {
+    private func loggable(_ verdict: NavigationVerdict) -> String {
         switch verdict {
         case .allow: "allow"
         case .cancel: "cancel"
-        case .openInSafari(let url): "openInSafari(\(loggable(url)))"
+        case .openInSafari(let url): "openInSafari(\(recon.loggable(url)))"
         }
     }
     #endif
@@ -133,11 +137,13 @@ extension BrowserEngine: WKUIDelegate {
 
 extension BrowserEngine: WKScriptMessageHandler {
     func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-        guard message.name == RouteMessage.handlerName, let path = RouteMessage.path(from: message.body) else { return }
+        guard message.name == RouteMessage.handlerName, let event = RouteMessage.event(from: message.body) else { return }
         #if DEBUG
-        print("[FocusBrowser] route: \(path) (isLoggedIn: \(isLoggedIn))")
+        print("[FocusBrowser] route: \(event.kind.rawValue) \(recon.redactor.redact(event.path)) (isLoggedIn: \(isLoggedIn))")
+        recon.scheduleSnapshot(for: event, in: webView)
         #endif
-        currentPath = path
+        lastRouteEvent = event
+        currentPath = event.path
     }
 }
 

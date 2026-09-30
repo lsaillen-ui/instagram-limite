@@ -37,6 +37,10 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         GENERATE_INFOPLIST_FILE: NO
+      configs:
+        Release:
+          # DEBUG-only recon script (Step 2): must not ship in the bundle.
+          EXCLUDED_SOURCE_FILE_NAMES: recon.js
 
   FocusBrowserTests:
     type: bundle.unit-test

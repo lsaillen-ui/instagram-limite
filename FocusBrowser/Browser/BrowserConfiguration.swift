@@ -33,6 +33,14 @@ enum BrowserConfiguration {
             forMainFrameOnly: true,
             in: .page
         ))
+        #if DEBUG
+        controller.addUserScript(WKUserScript(
+            source: scriptSource(named: "recon"),
+            injectionTime: .atDocumentStart,
+            forMainFrameOnly: true,
+            in: focusWorld
+        ))
+        #endif
         controller.add(routeHandler, contentWorld: .page, name: RouteMessage.handlerName)
         return configuration
     }
