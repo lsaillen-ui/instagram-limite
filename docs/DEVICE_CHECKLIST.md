@@ -3,10 +3,10 @@
 Items that need a real iPhone or a logged-in Instagram account to verify. Filled in from Step 1.
 
 ## Step 1: web view foundation
-- [ ] Cold launch on device: the login page (or the inbox when already logged in) loads; no "open the app" banner, no degraded layout (checks the UA `Safari/` token).
-- [ ] Log in through instagram.com's own UI, kill the app, relaunch: still logged in (persistent cookies).
-- [ ] Safe areas: the page is inset by SwiftUI's safe area; check nothing is clipped at the notch or home indicator, and whether `viewport-fit=cover` should instead let content run edge to edge.
-- [ ] Viewport lock: no pinch zoom, no zoom on focusing a text field, no rubber-band overscroll.
+- [x] Cold launch on device: the login page (or the inbox when already logged in) loads; no "open the app" banner, no degraded layout (checks the UA `Safari/` token).
+- [x] Log in through instagram.com's own UI, kill the app, relaunch: still logged in (persistent cookies).
+- [x] Safe areas: the page is inset by SwiftUI's safe area; check nothing is clipped at the notch or home indicator, and whether `viewport-fit=cover` should instead let content run edge to edge.
+- [x] Viewport lock: no pinch zoom, no zoom on focusing a text field, no rubber-band overscroll.
 - [ ] Videos and reels do not autoplay; a tap plays inline (no fullscreen takeover).
 - [ ] "Log in with Facebook": external hosts open in `SFSafariViewController`, whose cookies are not shared with the app. Verify whether this flow is usable; if not, decide on an allowlist.
 - [ ] A link shared in a DM (`l.instagram.com/?u=…`) opens the real target in `SFSafariViewController`.
