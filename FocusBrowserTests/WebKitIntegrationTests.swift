@@ -168,5 +168,66 @@ struct WebKitIntegrationTests {
             #expect(js == redactor.redact(path), "path: \(path)")
         }
     }
+
+    private static let overlayFixture = """
+    <html><head></head><body style="margin:0">
+    <main><a href="/direct/t/98765/">chat</a><a href="/bob/" aria-label="Open the profile page of bob">bob</a></main>
+    <div id="feed-overlay" style="position:fixed;top:0;left:0;width:100%;height:100%;z-index:5">
+      <div id="reel-scroller" style="height:100%;overflow-y:auto">
+        <div style="height:800px"><video style="width:100%;height:100%"></video><a href="/bob/reels/" aria-label="bob reels">r</a></div>
+        <div style="height:800px"><video style="width:100%;height:100%"></video><a href="/dave/reels/" aria-label="dave reels">r</a></div>
+        <div style="height:800px"><video style="width:100%;height:100%"></video></div>
+      </div>
+      <button aria-label="Close">x</button>
+      <div role="button" aria-label="React to message from carol">y</div>
+      <div role="button" aria-label="View Summer 2024 highlight">y</div>
+    </div>
+    </body></html>
+    """
+
+    @Test func reconMasksNamesInLabelsAndDescribesOverlays() async throws {
+        let harness = Harness()
+        let webView = makeWebView(harness)
+        await harness.load(Self.overlayFixture, in: webView)
+
+        let redactor = PathRedactor(salt: "s2")
+        let raw = try await focusResult("return __focusRecon.snapshot(salt);", arguments: ["salt": redactor.salt], in: webView)
+        let snapshot = try #require(raw as? [String: Any])
+        let json = String(decoding: try JSONSerialization.data(withJSONObject: snapshot), as: UTF8.self)
+
+        // Names from hrefs ("bob", "dave") and from label patterns ("carol", highlight title) are gone.
+        for leaked in ["bob", "dave", "carol", "Summer"] { #expect(!json.contains(leaked), "leaked \(leaked)") }
+        let labels = try #require(snapshot["labels"] as? [String])
+        #expect(labels.contains("button:Close"))
+        #expect(labels.contains("div:React to message from @\(redactor.token(for: "carol"))"))
+        #expect(labels.contains("div:View #highlight highlight"))
+        let links = try #require(snapshot["links"] as? [[String: Any]])
+        #expect(links.contains { $0["label"] as? String == "Open the profile page of @\(redactor.token(for: "bob"))" })
+        #expect(links.contains { $0["label"] as? String == "@\(redactor.token(for: "dave")) reels" })
+
+        let overlays = try #require(snapshot["overlays"] as? [[String: Any]])
+        #expect(overlays.count == 1)
+        #expect(overlays.first?["video"] as? Bool == true)
+
+        let scrollers = try #require(snapshot["scrollers"] as? [[String: Any]])
+        let scroller = try #require(scrollers.first { $0["video"] as? Bool == true })
+        #expect(scroller["children"] as? Int == 3)
+        #expect(scroller["videoChildren"] as? Int == 3)
+        #expect(scroller["scrollTop"] as? Int == 0)
+        let ancestors = try #require(scroller["ancestors"] as? [String])
+        #expect(ancestors.first == "div@fixed")
+
+        let videos = try #require(snapshot["videos"] as? [String: Any])
+        #expect(videos["count"] as? Int == 3)
+        #expect(videos["inView"] as? Int == 0)
+
+        // A swipe changes what is in view and the scroll position.
+        _ = try await focusResult("document.getElementById('reel-scroller').scrollTop = 800; return 0;", in: webView)
+        let after = try #require(try await focusResult("return __focusRecon.snapshot(salt);", arguments: ["salt": redactor.salt], in: webView) as? [String: Any])
+        let afterVideos = try #require(after["videos"] as? [String: Any])
+        #expect(afterVideos["inView"] as? Int == 1)
+        let afterScroller = try #require((after["scrollers"] as? [[String: Any]])?.first { $0["video"] as? Bool == true })
+        #expect(afterScroller["scrollTop"] as? Int == 800)
+    }
     #endif
 }

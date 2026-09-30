@@ -80,8 +80,51 @@
     }
   }
 
+  // Usernames seen in profile hrefs since the page loaded (a single-page app keeps this alive
+  // across snapshots). Labels mentioning them are masked with the same token the path gets.
+  var knownNames = Object.create(null);
+  var currentSalt = "";
+
+  function learnNames() {
+    var anchors = document.querySelectorAll("a[href]");
+    for (var i = 0; i < anchors.length; i++) {
+      var href = anchors[i].getAttribute("href") || "";
+      var match = /^\/([A-Za-z0-9._]{3,30})(?:\/|$)/.exec(href);
+      if (match && !firstSet[match[1].toLowerCase()]) knownNames[match[1]] = true;
+    }
+  }
+
+  function escapeRegExp(text) {
+    return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  }
+
+  // "React to message from bob" carries a name the hrefs of the page may not (your own account).
+  var NAME_AFTER = /(message from |profile page of |story by |photo by |video by |reel by |photo shared by |options for message from )([^\s,]+)/gi;
+  var NAME_BEFORE_REELS = /^(\S+) reels$/i;
+  var HIGHLIGHT = /^(View ).+( highlight)$/i;
+
+  function maskLabel(text) {
+    var out = String(text);
+    var names = Object.keys(knownNames);
+    if (names.length) {
+      var alternation = names.map(escapeRegExp).join("|");
+      out = out.replace(
+        new RegExp("(^|[^A-Za-z0-9._])(" + alternation + ")(?![A-Za-z0-9._])", "g"),
+        function (all, before, name) { return before + "@" + token(currentSalt, name); }
+      );
+    }
+    out = out.replace(NAME_AFTER, function (all, prefix, name) {
+      return name.charAt(0) === "@" ? all : prefix + "@" + token(currentSalt, name);
+    });
+    out = out.replace(NAME_BEFORE_REELS, function (all, name) {
+      return name.charAt(0) === "@" ? all : "@" + token(currentSalt, name) + " reels";
+    });
+    out = out.replace(HIGHLIGHT, "$1#highlight$2");
+    return out;
+  }
+
   function clip(text) {
-    return String(text).replace(/\s+/g, " ").trim().slice(0, MAX_LABEL_LENGTH);
+    return maskLabel(String(text)).replace(/\s+/g, " ").trim().slice(0, MAX_LABEL_LENGTH);
   }
 
   function labelOf(element) {
@@ -167,6 +210,22 @@
     };
   }
 
+  // Up to 8 ancestors, nearest first: tag[role], plus @fixed / @abs for positioned ones. This is
+  // what tells a full-screen overlay apart from the page, and gives a structural anchor.
+  function ancestorsOf(element) {
+    var chain = [];
+    for (var node = element.parentElement; node && chain.length < 8; node = node.parentElement) {
+      var text = node.tagName.toLowerCase();
+      var role = node.getAttribute("role");
+      if (role) text += "[" + role + "]";
+      var position = getComputedStyle(node).position;
+      if (position === "fixed") text += "@fixed";
+      else if (position === "absolute") text += "@abs";
+      chain.push(text);
+    }
+    return chain;
+  }
+
   function depthOf(element) {
     var depth = 0;
     for (var node = element.parentElement; node; node = node.parentElement) depth++;
@@ -185,9 +244,17 @@
         tag: element.tagName.toLowerCase(),
         depth: depthOf(element),
         size: element.clientWidth + "x" + element.clientHeight,
+        scrollTop: Math.round(element.scrollTop),
         scrollHeight: element.scrollHeight,
-        video: element.querySelector("video") !== null
+        video: element.querySelector("video") !== null,
+        ancestors: ancestorsOf(element),
+        children: element.children.length
       };
+      var videoChildren = 0;
+      for (var c = 0; c < element.children.length; c++) {
+        if (element.children[c].querySelector("video")) videoChildren++;
+      }
+      if (videoChildren) entry.videoChildren = videoChildren;
       var role = element.getAttribute("role");
       if (role) entry.role = role;
       var label = element.getAttribute("aria-label");
@@ -201,13 +268,49 @@
       .map(function (entry) { delete entry.area; return entry; });
   }
 
+  // Fixed-position elements covering most of the viewport: how a full-screen overlay (for example
+  // a reel opened from a conversation) shows up when the URL does not change.
+  function overlays() {
+    var found = [];
+    var all = document.querySelectorAll("body *");
+    var width = window.innerWidth;
+    var height = window.innerHeight;
+    for (var i = 0; i < all.length; i++) {
+      var element = all[i];
+      if (getComputedStyle(element).position !== "fixed") continue;
+      var rect = element.getBoundingClientRect();
+      if (rect.width < width * 0.8 || rect.height < height * 0.6) continue;
+      var entry = {
+        tag: element.tagName.toLowerCase(),
+        depth: depthOf(element),
+        size: Math.round(rect.width) + "x" + Math.round(rect.height),
+        video: element.querySelector("video") !== null,
+        zIndex: getComputedStyle(element).zIndex
+      };
+      var role = element.getAttribute("role");
+      if (role) entry.role = role;
+      var label = element.getAttribute("aria-label");
+      if (label) entry.label = clip(label);
+      found.push(entry);
+      if (found.length >= 5) break;
+    }
+    return found;
+  }
+
   function videos() {
     var all = document.querySelectorAll("video");
     var playing = 0;
+    var inView = -1; // index of the video covering the middle of the viewport
+    var middleX = window.innerWidth / 2;
+    var middleY = window.innerHeight / 2;
     for (var i = 0; i < all.length; i++) {
       if (!all[i].paused && !all[i].ended && all[i].readyState > 2) playing++;
+      var rect = all[i].getBoundingClientRect();
+      if (inView === -1 && rect.left <= middleX && rect.right >= middleX && rect.top <= middleY && rect.bottom >= middleY) {
+        inView = i;
+      }
     }
-    return { count: all.length, playing: playing };
+    return { count: all.length, playing: playing, inView: inView };
   }
 
   function section(build) {
@@ -220,8 +323,12 @@
 
   window.__focusRecon = {
     redactPath: redactPath,
+    maskLabel: function (text, salt) { currentSalt = String(salt); return maskLabel(text); },
+    learnNames: learnNames,
     snapshot: function (salt) {
       salt = String(salt);
+      currentSalt = salt;
+      learnNames();
       return {
         path: redactPath(location.pathname, salt),
         historyLength: history.length,
@@ -229,6 +336,7 @@
         labels: section(labels),
         dialogs: section(dialogs),
         scrollers: section(scrollers),
+        overlays: section(overlays),
         videos: section(videos)
       };
     }
