@@ -25,6 +25,15 @@ enum BrowserConfiguration {
         configuration.mediaTypesRequiringUserActionForPlayback = .all
 
         let controller = configuration.userContentController
+        installUserScripts(on: controller, filterConfig: filterConfig)
+        controller.add(routeHandler, contentWorld: .page, name: RouteMessage.handlerName)
+        controller.add(routeHandler, contentWorld: focusWorld, name: FocusHealthMessage.handlerName)
+        return configuration
+    }
+
+    /// Installs every user script. Also used to swap in a new filter config: call
+    /// `removeAllUserScripts()` first, then this (message handlers are untouched).
+    static func installUserScripts(on controller: WKUserContentController, filterConfig: FilterConfig) {
         controller.addUserScript(WKUserScript(
             source: scriptSource(named: "base"),
             injectionTime: .atDocumentStart,
@@ -56,9 +65,6 @@ enum BrowserConfiguration {
             forMainFrameOnly: true,
             in: focusWorld
         ))
-        controller.add(routeHandler, contentWorld: .page, name: RouteMessage.handlerName)
-        controller.add(routeHandler, contentWorld: focusWorld, name: FocusHealthMessage.handlerName)
-        return configuration
     }
 
     /// Bundled scripts are part of the app: a missing one is a build error, not a runtime condition.

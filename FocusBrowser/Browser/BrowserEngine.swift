@@ -24,12 +24,13 @@ final class BrowserEngine: NSObject {
     private(set) var isLoggedIn = false
 
     /// Rules the engine reported unhealthy (matched nothing where expected, or invalid). Newest last.
-    /// Step 3 will use them to force a config refresh.
     private(set) var healthFailures: [HealthFailure] = []
+    /// Called on every health failure; the app uses it to force a config refresh.
+    @ObservationIgnored var onHealthFailure: (@MainActor () -> Void)?
 
     private var lastAllowedURL = BrowserConfiguration.startURL
     private let openExternally: @MainActor (URL) -> Void
-    private let policy: RoutePolicy
+    @ObservationIgnored private var policy: RoutePolicy
     @ObservationIgnored private var navigationState = NavigationState()
     #if DEBUG
     @ObservationIgnored private let recon = Recon()
@@ -63,6 +64,27 @@ final class BrowserEngine: NSObject {
         if loadOnInit {
             webView.load(URLRequest(url: BrowserConfiguration.startURL))
         }
+    }
+
+    /// Hot-applies a validated config: new route policy, scripts for future page loads, and the
+    /// current page re-configured without a reload. The config reaches the page only as data
+    /// (re-encoded from `FilterConfig`), never as source text.
+    func apply(_ config: FilterConfig) async {
+        policy = config.policy
+        let controller = webView.configuration.userContentController
+        controller.removeAllUserScripts()
+        BrowserConfiguration.installUserScripts(on: controller, filterConfig: config)
+
+        guard
+            let json = try? config.pageJSON(),
+            let object = try? JSONSerialization.jsonObject(with: Data(json.utf8))
+        else { return }
+        _ = try? await webView.callAsyncJavaScript(
+            "__focus.apply(cfg)",
+            arguments: ["cfg": object],
+            in: nil,
+            contentWorld: BrowserConfiguration.focusWorld
+        )
     }
 
     private func refreshAuthState() async {
@@ -264,6 +286,7 @@ extension BrowserEngine: WKScriptMessageHandler {
             #if DEBUG
             print("[FocusBrowser] health: rule \(failure.ruleId) \(failure.reason) on \(recon.redactor.redact(failure.path))")
             #endif
+            onHealthFailure?()
         default:
             return
         }

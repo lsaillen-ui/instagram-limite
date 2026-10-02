@@ -18,6 +18,16 @@ Items that need a real iPhone or a logged-in Instagram account to verify. Filled
 - [x] Cookie banner on first launch (logged out, fresh install): tapping "Allow all cookies" (and "Decline optional cookies") does not crash; the banner goes away and the login page stays usable. Read the DEBUG console for `decidePolicyFor` / `createWebViewWith` lines and note every host that ends in `openInSafari`.
 - [ ] An external link opened in `SFSafariViewController` can be dismissed with Done; a second external link afterwards opens normally; rapid double taps present only one.
 
+## Step 3: over-the-air config
+Needs the real Pages URL in `RemoteConfigEndpoint.baseURL` and `remote-config/` published.
+
+- [ ] Launch with Wi-Fi on: the DEBUG log shows `config refresh: …` (`unchanged` when the published revision equals the bundled one, `updated` after publishing a newer one).
+- [ ] Publish a config with a newer revision that hides one more selector: reopen the app, the rule is active on the current page without a reload (or after the next navigation).
+- [ ] Publish a config with a wrong signature (edit `config.json` without re-signing): the log shows `rejected`, nothing changes.
+- [ ] Airplane mode at launch: the app loads at once with the cached/bundled config, no delay, no error.
+- [ ] A second launch sends `If-None-Match` and gets `unchanged` (304) from Pages.
+- [ ] Put the app in the background for more than 6 h (or change `staleAfter` temporarily): coming back triggers a refresh.
+
 ## Step 2: route policy and injection engine
 Logged in, on the iPhone, with the DEBUG log open (`[FocusBrowser] route: … -> allow|goBack|redirect(…)`). "Returned to hub" means the page is back on the conversation, profile or post you came from.
 

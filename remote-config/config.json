@@ -1,0 +1,41 @@
+{
+  "schema": 1,
+  "minEngine": 1,
+  "revision": "2026-10-02.1",
+  "routes": {
+    "redirectHomeTo": "/direct/inbox/",
+    "blocked": ["homeFeed", "reelsFeed", "explore"],
+    "patterns": {
+      "homeFeed": ["^/$"],
+      "thread": ["^/direct/t/[^/]+"],
+      "inbox": ["^/direct(/|$)"],
+      "reelsFeed": ["^/reels(/audio(/.*)?)?/?$"],
+      "reel": ["^/reels?/([^/]+)/?$", "^/[^/]+/reel/([^/]+)/?$"],
+      "story": ["^/stories/(highlights)/([^/]+)/?$", "^/stories/([^/]+)(?:/([^/]+))?/?$"],
+      "post": ["^/p/[^/]+", "^/[^/]+/p/[^/]+"],
+      "explore": ["^/explore(/|$)"],
+      "auth": ["^/(accounts|challenge)(/|$)"]
+    }
+  },
+  "rules": [
+    {
+      "id": "nav.home",
+      "hide": "a[href=\"/\"], *:has(> a[href=\"/\"]:only-child)",
+      "expectOn": ["^/p/"]
+    },
+    {
+      "id": "nav.explore",
+      "hide": "a[href=\"/explore/\"], *:has(> a[href=\"/explore/\"]:only-child)",
+      "expectOn": ["^/p/"]
+    },
+    {
+      "id": "nav.reels",
+      "hide": "a[href=\"/reels/\"], *:has(> a[href=\"/reels/\"]:only-child)",
+      "expectOn": ["^/p/"]
+    }
+  ],
+  "i18n": {
+    "en": { "suggested": "Suggested for you" },
+    "fr": { "suggested": "Suggestions pour vous" }
+  }
+}
